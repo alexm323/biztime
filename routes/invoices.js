@@ -6,7 +6,7 @@ const ExpressError = require("../expressError")
 const router = express.Router();
 // connecting our database logic
 const db = require("../db");
-
+const datetime = require('date-time')
 // Return invoices data
 router.get('/', async (req, res, next) => {
     try {
@@ -19,19 +19,24 @@ router.get('/', async (req, res, next) => {
 })
 // Returns a single invoices data
 router.get('/:id', async (req, res, next) => {
-    const { id } = req.params
-    const results = await db.query('SELECT * FROM invoices WHERE id=$1', [id])
-    if (results.rows.length === 0) {
-        throw new ExpressError(`Unable to find an invoice with id of ${id}`, 404)
+    try {
+        const { id } = req.params
+        const results = await db.query('SELECT * FROM invoices WHERE id=$1', [id])
+        if (results.rows.length === 0) {
+            throw new ExpressError(`Unable to find an invoice with id of ${id}`, 404)
+        }
+        return res.json({ invoice: results.rows[0] })
+    } catch (e) {
+        next(e)
     }
-    return res.json({ invoice: results.rows[0] })
+
 })
 // Creates a new invoice
 router.post('/', async (req, res, next) => {
     try {
         const { comp_code, amt } = req.body
         const results = await db.query('INSERT INTO invoices (comp_code,amt) VALUES($1,$2) RETURNING id, comp_code, amt, paid, add_date, paid_date', [comp_code, amt])
-        return res.json({ invoice: results.rows[0] })
+        return res.status(201).json({ invoice: results.rows[0] })
     } catch (e) {
         next(e)
     }
@@ -40,10 +45,29 @@ router.post('/', async (req, res, next) => {
 // Updates an invoice, if it exists 
 router.put('/:id', async (req, res, next) => {
     try {
+        let currentDate;
+
         const { id } = req.params
-        const { amt } = req.body
-        const results = await db.query('UPDATE invoices SET amt=$1 WHERE id=$2 RETURNING id, comp_code, amt, paid, add_date, paid_date', [amt, id])
-        return res.json({ invoice: results.rows[0] })
+        const { amt, paid } = req.body
+        if (paid === false) {
+
+            const results = await db.query('UPDATE invoices SET amt=$1,paid=$2,paid_date=NULL WHERE id=$3 RETURNING id, comp_code, amt, paid, add_date, paid_date', [amt, paid, id])
+            if (results.rows.length === 0) {
+                throw new ExpressError(`Invoice with id of ${id} could not be found`, 404)
+            }
+
+            return res.json({ invoice: results.rows[0] })
+        } else {
+            currentDate = datetime()
+            const results = await db.query(`UPDATE invoices SET amt=$1,paid=$2,paid_date=$4 WHERE id=$3 RETURNING id, comp_code, amt, paid, add_date, paid_date`, [amt, paid, id, currentDate])
+            if (results.rows.length === 0) {
+                throw new ExpressError(`Invoice with id of ${id} could not be found`, 404)
+            }
+
+            return res.json({ invoice: results.rows[0] })
+        }
+
+
     } catch (e) {
         next(e)
     }
